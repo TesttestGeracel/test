@@ -119,10 +119,8 @@ async def on_message(message: discord.Message):
 async def ping(ctx):
     await ctx.reply("pong")
 
-# Entry point: token comes from environment in hosting (Railway)
-import os
-TOKEN = os.getenv("DISCORD_TOKEN")
-if not TOKEN:
-    print("❌ Set the DISCORD_TOKEN environment variable.")
-else:
-    bot.run(TOKEN)
+# Entry point: directly using your token (local testing)
+# WARNING: do NOT share this file publicly if it contains your token
+bot.run("MTQwNzgxNDM1MTU2MTQyNTA1MA.GPhQgX.QpeBhAnCWZrWBS0-nc5X0fHXhAbPhf27w9NZiA")
+
+
