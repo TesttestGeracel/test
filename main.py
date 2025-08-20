@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+import os
 
 # ---------- Config ----------
 # Optional: limit to specific channel IDs. Leave empty to apply in all channels the bot can see.
@@ -9,6 +10,7 @@ CHANNEL_WHITELIST = set()  # e.g., {123456789012345678, 987654321098765432}
 ALLOWED_MENTIONS = discord.AllowedMentions(everyone=False, users=True, roles=False)
 # ----------------------------
 
+# Intents
 intents = discord.Intents.default()
 intents.message_content = True
 intents.messages = True
@@ -20,9 +22,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 channel_webhooks = {}
 
 async def get_or_create_webhook(target_channel: discord.TextChannel):
-    """
-    Get/create one webhook per *text channel* (parent for threads).
-    """
     if target_channel.id in channel_webhooks:
         return channel_webhooks[target_channel.id]
 
@@ -43,53 +42,48 @@ async def on_ready():
 
 @bot.event
 async def on_message(message: discord.Message):
-    # 1) Avoid loops / skip bots & webhooks
-    if message.author.bot:
-        return
-    if message.webhook_id is not None:
+    # Ignore bots and webhooks
+    if message.author.bot or message.webhook_id is not None:
         return
 
-    # 2) Optional: restrict to whitelist
+    # Optional whitelist
     if CHANNEL_WHITELIST and message.channel.id not in CHANNEL_WHITELIST:
         return
 
-    # 3) Determine the text channel where the webhook belongs
     channel = message.channel
     thread = None
-
-    # Webhooks belong to parent text channels; we can still send into threads
     if isinstance(channel, discord.Thread):
         thread = channel
         channel = channel.parent  # type: ignore
 
-    # 4) Get/create webhook
     if not isinstance(channel, discord.TextChannel):
-        return  # ignore DMs / categories / voice
+        return
+
+    # Get or create webhook
     webhook = await get_or_create_webhook(channel)
     if webhook is None:
         return
 
-    # 5) Collect attachments (all media/files)
+    # Collect attachments
     files = []
     try:
         for att in message.attachments:
-            # Preserve spoiler flag if present
             f = await att.to_file(spoiler=att.is_spoiler())
             files.append(f)
     except Exception as e:
         print(f"[WARN] Failed to fetch attachments: {e}")
 
-    # 6) Build display name & avatar
+    # Display name & avatar
     display_name = message.author.display_name
     avatar_url = message.author.display_avatar.url if message.author.display_avatar else None
 
-    # 7) Preserve reply context (if message is a reply)
+    # Preserve reply context
     reference_note = ""
     if message.reference and isinstance(message.reference.resolved, discord.Message):
         ref = message.reference.resolved
         reference_note = f"(reply to {ref.author.display_name}) "
 
-    # 8) Send via webhook into same place (thread if applicable)
+    # Send via webhook
     try:
         await webhook.send(
             content=(reference_note + message.content) if message.content else reference_note or None,
@@ -97,7 +91,7 @@ async def on_message(message: discord.Message):
             avatar_url=avatar_url,
             files=files if files else None,
             allowed_mentions=ALLOWED_MENTIONS,
-            thread=thread  # will post inside the thread if original was in a thread
+            thread=thread  # posts inside thread if original was in thread
         )
     except discord.Forbidden:
         print("[WARN] Webhook send forbidden — missing perms?")
@@ -106,7 +100,7 @@ async def on_message(message: discord.Message):
         print(f"[ERROR] Webhook send failed: {e}")
         return
 
-    # 9) Delete original message
+    # Delete original message
     try:
         await message.delete()
     except discord.Forbidden:
@@ -114,13 +108,19 @@ async def on_message(message: discord.Message):
     except discord.HTTPException as e:
         print(f"[WARN] Failed to delete original message: {e}")
 
-# Optional: simple health command
+# Optional health check command
 @bot.command()
 async def ping(ctx):
     await ctx.reply("pong")
 
-# Entry point: directly using your token (local testing)
-# WARNING: do NOT share this file publicly if it contains your token
-bot.run("MTQwNzgxNDM1MTU2MTQyNTA1MA.GPhQgX.QpeBhAnCWZrWBS0-nc5X0fHXhAbPhf27w9NZiA")
+# Entry point: use environment variable for token (Railway safe)
+TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    print("❌ No DISCORD_TOKEN found in environment!")
+    exit(1)
+
+bot.run(TOKEN)
+
+
 
 
